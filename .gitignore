@@ -1,0 +1,43 @@
+# Terraform state and variables
+*.tfstate*
+*.tfvars
+
+# Environment files
+.env*
+
+# Keys and certificates
+*.pem
+*.key
+
+# Private context and notes
+homelab-context.json
+CLAUDE.md
+private/
+
+# OpenTofu working files (keep .terraform.lock.hcl)
+.terraform/
+*.tfplan
+crash.log
+override.tf
+override.tf.json
+
+# Raw device configs (contain hashes and secrets; commit only sanitized copies)
+config.xml
+*.bak
+
+# Credentials and keys
+*.pfx
+*.p12
+*.ovpn
+*.kdbx
+id_rsa*
+id_ed25519*
+.bws*
+secrets/
+
+# Claude Code local files
+.claude/settings.local.json
+
+# OS noise
+Thumbs.db
+desktop.ini
