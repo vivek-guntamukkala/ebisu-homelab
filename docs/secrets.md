@@ -49,6 +49,11 @@ Encode locally (never through chat):
 Fetch it onto a machine with `scripts/fetch-ip-schema.sh` or
 `scripts/fetch-ip-schema.ps1`. The output `schema/ip-schema.yaml` is git-ignored.
 
+On Windows, local scripts may be blocked by the execution policy. Run the script with a
+process-only bypass, which changes no system setting:
+
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\fetch-ip-schema.ps1
+
 ## Open
 
 Token delivery to Linux guests (O19) is undecided.
