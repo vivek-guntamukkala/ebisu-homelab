@@ -1,0 +1,9 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Blocks a commit if the staged changes contain secrets or private addresses.
+# Enable once per clone:  git config core.hooksPath .githooks
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "gitleaks was not found on PATH. Install it (see docs/secrets-scan.md)." >&2
+  exit 1
+fi
+exec gitleaks git --pre-commit --staged --redact --no-banner --verbose

@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: MIT
+#
+# ip-schema.example.yaml: structure of the real address plan.
+#
+# EVERY VALUE BELOW IS A DUMMY from the RFC 5737 documentation range (192.0.2.0/24)
+# and means nothing. The real file, ip-schema.yaml, is stored as a Bitwarden Secrets
+# Manager secret (project: iac-deploy), pulled by scripts/load-secrets.sh, and is
+# git-ignored. Keep this file in step with the real one's structure, never its values.
+
+schema_version: 1
+domain: ebisu.media
+
+segments:
+  management:
+    vlan_tag: null              # untagged
+    subnet: 192.0.2.0/26
+    gateway: 192.0.2.1          # the OPNsense VM
+    dhcp_range: [192.0.2.20, 192.0.2.50]
+    dns: 192.0.2.1              # OPNsense Unbound
+  dmz:
+    vlan_tag: 10
+    subnet: 192.0.2.64/26
+    gateway: 192.0.2.65
+    dhcp_range: [192.0.2.80, 192.0.2.120]
+    dns: 192.0.2.65
+  trust:
+    vlan_tag: 20
+    subnet: 192.0.2.128/26
+    gateway: 192.0.2.129
+    dhcp_range: [192.0.2.140, 192.0.2.180]
+    dns: 192.0.2.129
+  security:
+    vlan_tag: 30
+    subnet: 192.0.2.192/26
+    gateway: 192.0.2.193
+    dhcp_range: [192.0.2.210, 192.0.2.240]
+    dns: 192.0.2.193
+
+hosts:
+  hermes:                       # OPNsense VM
+    vmid: 100
+    segment: management
+    address: 192.0.2.1
+  olympus:                      # Proxmox host
+    segment: management
+    address: 192.0.2.10
+  opnsense_mcp:                 # management segment first, moves to security in Phase 3
+    segment: security
+    address: 192.0.2.200
+  proxmox_mcp:
+    segment: security
+    address: 192.0.2.201
+  jellyfin:                     # LXC, milestone G1, LAN-only
+    segment: dmz
+    address: 192.0.2.66
+
+bridges:
+  vmbr0: trunk                  # VLAN-aware, integrated NIC
+  vmbr1: wan1
+  vmbr2: wan2
+
+wans:
+  wan1: { type: pppoe, interface: vtnet1 }
+  wan2: { type: dhcp,  interface: vtnet2 }
