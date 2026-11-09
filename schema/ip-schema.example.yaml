@@ -4,8 +4,8 @@
 #
 # EVERY VALUE BELOW IS A DUMMY from the RFC 5737 documentation range (192.0.2.0/24)
 # and means nothing. The real file, ip-schema.yaml, is stored as a Bitwarden Secrets
-# Manager secret (project: iac-deploy), pulled by scripts/load-secrets.sh, and is
-# git-ignored. Keep this file in step with the real one's structure, never its values.
+# Manager secret (project: iac-deploy), written locally by scripts/fetch-ip-schema.sh
+# (or .ps1), and is git-ignored. Keep this file in step with the real one's structure, never its values.
 
 schema_version: 1
 domain: ebisu.media
