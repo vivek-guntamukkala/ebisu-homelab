@@ -2,8 +2,8 @@
 
 # Homelab implementation plan
 
-A reproducible homelab on a single Proxmox node, fronted by OPNsense and
-Cloudflare, with secrets and agentic (MCP) access defined as code. Identity and
+A reproducible homelab on a single Proxmox node, fronted by OPNsense, with secrets
+and agentic (MCP) access defined as code. External access (Cloudflare), identity and
 monitoring are designed but **on hold**; the core platform comes first.
 
 This is the build plan: **intent first, then steps**. Environment-specific values
@@ -24,12 +24,12 @@ outside this repository (see Sections 2.3 and 2.7).
 | 2 | Phase 1 | Proxmox as code and host hygiene |
 | 3 | Phase 2 | OPNsense MCP (read and guarded write) |
 | 4 | Phase 3 | Network segmentation, through the MCP |
-| 5 | Phase 4 | Split DNS and tunnel |
+| 5 | Phase 4 | Split DNS (tunnel deferred) |
 | 6 | Phase 5 | Proxmox MCP (read-only) and performance gate |
-| 7 | G1 | Jellyfin media server |
+| 7 | G1 | Jellyfin media server (LAN-only) |
 | 8 | Phase 9 | Remaining write tools |
 | 9 | Phase 7 | Retire `fafnir` (last step) |
-| on hold | Phase 6, Phase 8 | Identity; SIEM and SOAR |
+| on hold | Phase 6, Phase 8, external access | Identity; SIEM and SOAR; Cloudflare Tunnel |
 
 ---
 
@@ -62,9 +62,8 @@ When a choice is ambiguous, resolve it in favour of these.
    exceptions: API bootstrap and key creation, firmware upgrades, and console or
    direct-cable recovery.
 10. **Core platform first.** Authentication and security tooling are deliberately
-    deferred and added gradually. Until then every system uses local accounts, the MCP
-    servers stay LAN-only, and the one public service (Jellyfin) carries a documented,
-    temporary exposure.
+    deferred and added gradually. Until then every system uses local accounts and
+    nothing is published: the MCP servers and Jellyfin stay LAN-only.
 
 ---
 
@@ -91,7 +90,7 @@ When a choice is ambiguous, resolve it in favour of these.
 | 100 | hermes | OPNsense firewall | 3 virtio NICs on vmbr0/1/2 |
 | 101 | fafnir | Workstation VM | Stopped. Removed last, after the active plan (Phase 7) |
 | 104 | jormungandr | Unused | Removed in Phase 1 |
-| TBD | jellyfin | Media server | Planned, DMZ (milestone G1) |
+| TBD | jellyfin | Media server | Planned, DMZ, LAN-only (milestone G1) |
 
 ### 1.3 Admin workstation (`odysseus`)
 
@@ -140,14 +139,12 @@ It is not part of the active plan. Planning for it, including any storage change
 
 ### 2.1 Ingress and identity
 
-- **Cloudflare Tunnel** is the only ingress. The only published service in the active
-  plan is the media server (Jellyfin).
+- **Cloudflare Tunnel** is the only ingress design, and it is **on hold**. In the
+  active plan nothing is published: Jellyfin and the MCP servers are LAN-only.
 - **Authentication is on hold.** Every system uses local accounts for now: Proxmox
-  (`root`/PAM), OPNsense and Jellyfin. The edge gate and identity provider below are
+  (`root`/PAM), OPNsense and Jellyfin (strong unique passwords, and an admin account
+  that is not used for streaming). The edge gate and identity provider below are
   designed but deferred, to be added gradually (Phase 6).
-  - **Known, accepted exposure:** until the edge gate returns, Jellyfin's login page
-    is publicly reachable through the tunnel. Mitigation: strong unique passwords and
-    no admin account used for streaming.
 - **Planned, on hold (Phase 6):**
   - **Cloudflare Access** in front of every published hostname. Frontend apps: Google
     login plus an email allow-list. Backend/admin: a tighter allow-list federated to
@@ -172,7 +169,8 @@ It is not part of the active plan. Planning for it, including any storage change
 
 One naming scheme, two answers for `*.ebisu.media`.
 
-- **Off-LAN:** public Cloudflare DNS, resolving to the tunnel.
+- **Off-LAN (when the tunnel is added, on hold):** public Cloudflare DNS, resolving
+  to the tunnel.
 - **On-LAN:** OPNsense Unbound returns internal addresses via host overrides, so
   local traffic never hairpins out. Every DHCP scope hands out OPNsense as DNS.
 
@@ -180,14 +178,18 @@ One naming scheme, two answers for `*.ebisu.media`.
 
 - **Bitwarden Secrets Manager** in a separate free organisation. Free tier: unlimited
   secrets, 2 users, 3 projects, 3 machine accounts.
-- Injected at deploy time with `bws`; never written to disk in plaintext.
-- Rate limit is about 5 requests/second, so the loader batches reads
-  (`bws secret list` per project) and caches in a state file.
+- Injected into a process at run time with `bws run` (for example `bws run -- tofu
+  apply`); no `.env` files, and secrets are never written to disk in plaintext. The
+  token lives only in the shell session. Details in `docs/secrets.md`.
+- Rate limit is about 5 requests/second; `bws run` fetches a project's secrets in one
+  call, so no caching layer is needed.
 - **Machine accounts (fits the cap):** `mcp-layer` (MCP downstream tokens),
   `iac-deploy` (OpenTofu and deploy secrets, including the real IP schema), `apps`
   (application runtime secrets).
 - **IP schema:** the repo commits `ip-schema.example.yaml` (real structure, dummy
-  values). The real file is a Bitwarden secret pulled at deploy.
+  values). The real file is the Bitwarden secret `IP_SCHEMA_B64` (base64), written to
+  the git-ignored `schema/ip-schema.yaml` by `scripts/fetch-ip-schema.sh` (Linux,
+  macOS, WSL) or `scripts/fetch-ip-schema.ps1` (Windows).
 
 ### 2.4 Infrastructure as code
 
@@ -265,12 +267,14 @@ exist before anything else is built.
 5. `[ ]` Create the Bitwarden free organisation and enable Secrets Manager.
 6. `[ ]` Create the three machine accounts and projects. Store their tokens only in
    the password vault.
-7. `[ ]` Write `scripts/load-secrets.sh` (state file, batched reads).
-8. `[ ]` Author `schema/ip-schema.example.yaml`. Store the real file as an
-   `iac-deploy` secret and confirm the loader materialises it locally only.
+7. `[ ]` Write `scripts/fetch-ip-schema.sh` and `scripts/fetch-ip-schema.ps1` (use
+   `bws run`) and `docs/secrets.md`.
+8. `[ ]` Author `schema/ip-schema.example.yaml`. Store the real file as the
+   `iac-deploy` secret `IP_SCHEMA_B64` and confirm the fetch script materialises it
+   locally only.
 9. `[x]` Data-flow and topology diagrams added to `/docs`.
 
-**Exit:** a clean clone plus `load-secrets.sh` reproduces the real IP schema from
+**Exit:** a clean clone plus a fetch script reproduces the real IP schema from
 Bitwarden, the secrets scan passes, and nothing secret is tracked.
 
 ---
@@ -354,23 +358,18 @@ is in git.
 
 ---
 
-## 7. Phase 4: Split DNS and tunnel
+## 7. Phase 4: Split DNS
 
-**Intent:** the same names resolve internally to LAN addresses and externally through
-the tunnel. Configuration changes use the MCP or deploy tooling.
+**Intent:** the same names resolve to LAN addresses through OPNsense Unbound, so
+services are reached by name on the LAN. Configuration changes use the MCP or deploy
+tooling. The Cloudflare Tunnel part is deferred (Section 12).
 
 1. `[ ]` Migrate Cloudflare DDNS off the legacy plugin to the supported one.
-2. `[ ]` Create Unbound host overrides for each `app.ebisu.media`.
-3. `[ ]` Publish public DNS records pointing at the tunnel, per hostname, as each
-   service is deployed (the first is Jellyfin, milestone G1).
-4. `[ ]` Install `cloudflared` in the DMZ; keep tunnel and hostname definitions in the
-   repo.
-5. `[ ]` Verify one name resolves internally on-LAN and via the tunnel off-LAN, using a
-   throwaway test page that is removed afterwards.
-6. `[ ]` **Re-evaluate remote break-glass** now that the tunnel exists (for example a
-   second connector). Record the decision before continuing.
+2. `[ ]` Create Unbound host overrides for each `app.ebisu.media` name that is deployed.
+3. `[ ]` Verify the overrides resolve from a client in each segment that is meant to
+   use them.
 
-**Exit:** split horizon verified from both sides, tunnel config in git.
+**Exit:** internal names resolve correctly on the LAN and the overrides are in git.
 
 ---
 
@@ -396,7 +395,7 @@ depends on them.
 
 ---
 
-## 9. Milestone G1: Jellyfin media server
+## 9. Milestone G1: Jellyfin media server (LAN-only)
 
 **Intent:** the first service, deployed only after both MCP servers exist, so every
 firewall change goes through the audited tooling and the guest is described in code.
@@ -405,20 +404,16 @@ firewall change goes through the audited tooling and the guest is described in c
 
 1. `[ ]` Define the Jellyfin guest in OpenTofu, in the DMZ. Decide between a VM and a
    container (open decision 7).
-2. `[ ]` Create the DMZ rules through the OPNsense MCP: the tunnel connector reaches
+2. `[ ]` Create the DMZ rules through the OPNsense MCP: the client segments reach
    Jellyfin, Jellyfin reaches only what it needs outbound, and nothing in the DMZ
    reaches Management, TRUST or Security.
-3. `[ ]` Deploy `cloudflared` in the DMZ and point one hostname at Jellyfin. Keep the
-   tunnel definition in the repo.
-4. `[ ]` Add the Unbound host override so LAN clients resolve the same name internally.
-5. `[ ]` Set up Jellyfin local accounts: strong unique passwords, an admin account that
+3. `[ ]` Add the Unbound host override so LAN clients reach Jellyfin by name.
+4. `[ ]` Set up Jellyfin local accounts: strong unique passwords, an admin account that
    is not used for streaming, and one account per household member.
-6. `[ ]` Record the accepted exposure: the login page is publicly reachable until the
-   edge gate returns (Phase 6).
-7. `[ ]` Confirm each change landed as a committed, sanitized export in `/opnsense`.
+5. `[ ]` Confirm each change landed as a committed, sanitized export in `/opnsense`.
 
-**Exit:** household members stream from inside and outside the LAN using the same
-name, and the exposure and its mitigation are documented.
+**Exit:** household members stream on the LAN by name using Jellyfin local accounts.
+External access is added later (Section 12).
 
 ---
 
@@ -428,7 +423,8 @@ name, and the exposure and its mitigation are documented.
 measured and trusted, one tool at a time.
 
 1. `[ ]` Add Proxmox write tools behind a separate, higher-privilege token, one at a
-   time (for example `vm_start`, `vm_stop`).
+   time (for example `vm_start`, `vm_stop`). Use the stopped `fafnir` VM as the test
+   target.
 2. `[ ]` Keep the auto-revert and commit-per-change behaviour on every write tool.
 3. `[ ]` Add `opnsense_block_ip` as a manually invoked tool. Wiring it to automated
    detection is on hold (Phase 8).
@@ -445,18 +441,35 @@ in git.
 and reclaim its resources.
 
 1. `[ ]` Back up anything needed from `fafnir` and take a final snapshot.
-2. `[ ]` Remove the VM and its passthrough mappings through the audited path (open
-   decision 8), then confirm in OpenTofu.
+2. `[ ]` Remove the VM and its passthrough mappings. The removal doubles as the test
+   of either a Proxmox MCP write tool or the OpenTofu removal path (open decision 8).
+   Confirm in OpenTofu afterwards.
 3. `[ ]` Record the freed vCPU and RAM in the capacity table.
 
 **Exit:** `fafnir` is gone, its resources are free, and `tofu plan` is clean.
 
 ---
 
-## 12. On hold: identity, security tooling and automation
+## 12. On hold: external access, identity, security tooling and automation
 
 These phases are designed but not scheduled. They are added gradually, at the pace of
 the project, after the active plan. Until then every system uses local accounts.
+
+### External access (Cloudflare Tunnel), on hold
+
+**Intent:** reach published services from outside the LAN with zero inbound ports.
+
+1. `[ ]` Publish public DNS records pointing at the tunnel, per hostname.
+2. `[ ]` Install `cloudflared` in the DMZ; keep tunnel and hostname definitions in the
+   repo.
+3. `[ ]` Verify one name resolves internally on-LAN and via the tunnel off-LAN, using a
+   throwaway test page that is removed afterwards.
+4. `[ ]` **Re-evaluate remote break-glass** now that the tunnel exists (for example a
+   second connector). Record the decision before continuing.
+5. `[ ]` Publish Jellyfin through the tunnel. Decide at that point whether the edge gate
+   (Phase 6) arrives first or together.
+
+**Exit:** split horizon verified from both sides, tunnel config in git.
 
 ### Phase 6: Identity (WorkOS and Cloudflare Access), on hold
 
@@ -464,7 +477,7 @@ the project, after the active plan. Until then every system uses local accounts.
 
 1. `[ ]` Create WorkOS AuthKit and configure Google as a social connection.
 2. `[ ]` **Frontend gate:** Access app in front of Jellyfin (Google login and email
-   allow-list). This closes the exposure recorded in G1.
+   allow-list) once it is published.
 3. `[ ]` **Backend gate:** Access app in front of the Proxmox UI and, only if remote
    access is wanted, the MCP hostnames (tight allow-list, federated to WorkOS via
    OIDC).
@@ -503,9 +516,9 @@ budget.
 
 ## 13. Security posture summary
 
-- **Ingress:** zero inbound, tunnel only. The only published service is Jellyfin.
-- **Identity (current):** local accounts everywhere, MCP servers LAN-only, physical
-  last resort. Jellyfin's login page is public until the edge gate returns.
+- **Ingress:** zero inbound. Nothing is published in the active plan (Jellyfin and
+  the MCP servers are LAN-only); the tunnel is the only future ingress.
+- **Identity (current):** local accounts everywhere, physical last resort.
 - **Identity (planned, on hold):** Cloudflare Access with Google for frontend, an
   IdP-federated tight allow-list for backend, local accounts retained.
 - **Secrets:** Bitwarden Secrets Manager, deploy-time injection, scanned out of git.
@@ -521,13 +534,14 @@ budget.
 | # | Decision | Default | Resolve in |
 | --- | --- | --- | --- |
 | 1 | OPNsense version and API coverage (upgrade needed?) | Check first | Phase 2 |
-| 2 | Remote break-glass path | Physical only for now | Phase 4 |
+| 2 | Remote break-glass path | Physical only for now | When the tunnel is added |
 | 3 | Authentik adoption (OPNsense LDAP) | On hold | Phase 6b |
 | 4 | Wazuh RAM budget | On hold; built from measured data | Phase 8 |
 | 5 | Graphify for code and docs | Measure after real code exists | Phase 5 onward |
 | 6 | DNS on non-management DHCP scopes | Verify OPNsense is handed out | Phase 3 |
-| 7 | Jellyfin guest type, media storage and transcoding | Decide at G1 | G1 |
-| 8 | Mechanism for removing `fafnir` (a Phase 9 delete tool, or an OpenTofu apply) | Audited path, never ad hoc | Phase 7 |
+| 7 | Jellyfin guest type, media storage, transcoding, and which segments household devices use | Decide at G1 | G1 |
+| 8 | How `fafnir` is removed | Doubles as the test of a Proxmox MCP write tool or the OpenTofu path; decide at Phase 7 | Phase 7 |
+| 9 | Token delivery to Linux guests (MCP servers, apps) | Decide at Phase 2 | Phase 2 |
 
 ---
 
@@ -537,7 +551,7 @@ budget.
 | --- | --- | --- | --- |
 | Hypervisor | Proxmox VE 8.4 | AGPL | Single node `olympus` |
 | Firewall | OPNsense | BSD | `hermes`, sanitized config.xml as code |
-| Ingress | Cloudflare Tunnel | Free | Zero inbound |
+| Ingress (on hold) | Cloudflare Tunnel | Free | Zero inbound |
 | Edge gate (on hold) | Cloudflare Access | Free tier | Google and allow-list |
 | IdP, first (on hold) | WorkOS AuthKit | Free tier | OIDC |
 | IdP, later (on hold) | Authentik | Open source | OPNsense LDAP, about 2 GiB |
@@ -547,6 +561,6 @@ budget.
 | MCP | Custom servers | MIT | OPNsense: guarded write with auto-revert; Proxmox: read-only |
 | SIEM (on hold) | Wazuh | OSS | Indices on NVMe |
 | SOAR (on hold) | n8n | Fair-code | Reuses the MCP gateway |
-| Media server | Jellyfin | GPL | DMZ, local accounts for now |
+| Media server | Jellyfin | GPL | DMZ, LAN-only, local accounts |
 | Admin workstation | `odysseus` | n/a | Windows 11 ARM64, native Claude Code |
 | Repo | GitHub | MIT | IP schema via Bitwarden |

@@ -41,3 +41,6 @@ secrets/
 # OS noise
 Thumbs.db
 desktop.ini
+
+# Real IP schema, materialised locally from Bitwarden (see docs/secrets.md)
+schema/ip-schema.yaml
